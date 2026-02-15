@@ -1,0 +1,9 @@
+[Unit]
+Description=Node Ops Healthcheck (Docker + Discord)
+
+[Service]
+Type=oneshot
+User=user
+WorkingDirectory=/home/user/node-ops-template
+EnvironmentFile=/home/user/node-ops-template/.env
+ExecStart=/home/user/node-ops-template/scripts/healthcheck.sh
