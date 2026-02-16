@@ -1,22 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONTAINER="${1:-test-nginx}"
+CONTAINER="${1:-$CONTAINER_NAME}"
+PATTERN="${2:-$LOG_PATTERN}"
 WEBHOOK="${DISCORD_WEBHOOK:-}"
-PATTERN="${2:-error|fail|panic|oom|timeout|stuck|no peers}"
 
-if [[ -z "$WEBHOOK" ]]; then
-  echo "DISCORD_WEBHOOK が未設定です。"
-  exit 1
+STATE_FILE="/tmp/node_ops_${CONTAINER}_last_log"
+
+HIT="$(docker logs "$CONTAINER" --tail 200 2>&1 | grep -E -i "$PATTERN" | tail -n 5 || true)"
+
+if [[ -z "$HIT" ]]; then
+  echo "" > "$STATE_FILE"
+  exit 0
 fi
 
-# 直近200行からパターン検出
-HIT="$(docker logs "$CONTAINER" --since 65s 2>&1 | grep -E -i "$PATTERN" | tail -n 5 || true)"
+LAST="$(cat "$STATE_FILE" 2>/dev/null || true)"
 
-if [[ -n "$HIT" ]]; then
-  # 文字列整形（改行を \n に）
-  SAFE="$(printf "%s" "$HIT" | sed ':a;N;$!ba;s/\n/\\n/g')"
-  PAYLOAD="$(printf "%s" "🚨 Log alert in '${CONTAINER}':\n${HIT}" | jq -Rs '{content: .}')"
-  curl -sS -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK" >/dev/null
+if [[ "$HIT" == "$LAST" ]]; then
+  exit 0
 fi
 
+echo "$HIT" > "$STATE_FILE"
+
+PAYLOAD="$(printf "🚨 Log alert in %s:\n%s" "$CONTAINER" "$HIT" | jq -Rs '{content: .}')"
+curl -sS -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK" >/dev/null
